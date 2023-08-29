@@ -1,8 +1,8 @@
 package net.corda.samples.example.flows;
 import co.paralleluniverse.fibers.Suspendable;
 import net.corda.core.contracts.UniqueIdentifier;
-import net.corda.samples.example.contracts.MessageContract;
-import net.corda.samples.example.states.MessageState;
+import net.corda.samples.example.contracts.VerificationContract;
+import net.corda.samples.example.states.VerificationState;
 import net.corda.core.contracts.Command;
 import net.corda.core.contracts.ContractState;
 import net.corda.core.crypto.SecureHash;
@@ -19,12 +19,13 @@ import net.corda.core.flows.InitiatingFlow;
 import static net.corda.core.contracts.ContractsDSL.requireThat;
 import net.corda.core.identity.CordaX500Name;
 
-public class SendMessage {
+public class Verification {
     @InitiatingFlow
     @StartableByRPC
-    public static class Initiator extends FlowLogic<SignedTransaction> {
+    public static class InitiatorV extends FlowLogic<SignedTransaction> {
         private final Party receivingParty;
-        private final String message;
+        private final String ans;
+        private final String percent;
 
         private final Step GENERATING_TRANSACTION = new ProgressTracker.Step("Generating transaction.");
         private final Step VERIFYING_TRANSACTION = new ProgressTracker.Step("Verifying InitiatorV contract constraints.");
@@ -57,10 +58,11 @@ public class SendMessage {
 
 
 
-        public Initiator(String message, Party receivingParty) {
+        public InitiatorV(String ans, Party receivingParty, String percent) {
 
             this.receivingParty = receivingParty;
-            this.message = message;
+            this.ans = ans;
+            this.percent=percent;
         }
 
         @Suspendable
@@ -70,12 +72,12 @@ public class SendMessage {
             final Party notary = getServiceHub().getNetworkMapCache().getNotary(CordaX500Name.parse("O=Notary,L=London,C=GB"));
             progressTracker.setCurrentStep(GENERATING_TRANSACTION);
             Party sendingParty = getOurIdentity();
-            MessageState msgState = new MessageState(message, sendingParty, receivingParty, new UniqueIdentifier());
-            final Command<MessageContract.Commands.Create> txCommand1 = new Command<>(
-                    new MessageContract.Commands.Create(),
-                    Arrays.asList(msgState.getMsgSender().getOwningKey(), msgState.getMsgReceiver().getOwningKey()));
+            VerificationState msgState = new VerificationState(ans, sendingParty, receivingParty, percent, new UniqueIdentifier());
+            final Command<VerificationContract.Commands.Create> txCommand1 = new Command<>(
+                    new VerificationContract.Commands.Create(),
+                    Arrays.asList(msgState.getSender().getOwningKey(), msgState.getRecipient().getOwningKey()));
             final TransactionBuilder txBuilder1 = new TransactionBuilder(notary)
-                    .addOutputState(msgState, MessageContract.ID)
+                    .addOutputState(msgState, VerificationContract.ID)
                     .addCommand(txCommand1);
             //status update
             // Stage 2.
@@ -102,13 +104,13 @@ public class SendMessage {
         }
     }
 
-    @InitiatedBy(Initiator.class)
-    public static class Responder extends FlowLogic<SignedTransaction> {
+    @InitiatedBy(InitiatorV.class)
+    public static class ResponderV extends FlowLogic<SignedTransaction> {
         //private variable
         private final FlowSession receivingPartySession;
 
         //Constructor
-        public Responder(FlowSession receivingPartySession) {
+        public ResponderV(FlowSession receivingPartySession) {
             this.receivingPartySession = receivingPartySession;
         }
 
@@ -124,7 +126,7 @@ public class SendMessage {
                 protected void checkTransaction(SignedTransaction stx) {
                     requireThat(require -> {
                         ContractState output1 = stx.getTx().getOutputs().get(0).getData();
-                        require.using("This must be a Message transaction.", output1 instanceof MessageState);
+                        require.using("This must be a Message transaction.", output1 instanceof VerificationState);
 
 
                         return null;
